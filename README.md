@@ -28,39 +28,33 @@ The pipeline pulls from:
 
 ### Available Workflows
 
-**1. Build Single Image** (`build-uconsole-image.yml`)
-- Builds Debian Bookworm image only
-- Fastest option for testing
-- Use when iterating on kernel configs
-
-**2. Build All Images** (`build-all-images.yml`)
-- Builds Debian, Kali, and RetroPie from same kernel
-- Parallel execution after kernel build
-- Use for production releases
+**Build Radxa CM5 uConsole Images** (`build-all-images.yml`)
+- Single workflow with flexible build options
+- Build kernel once, choose which image(s) to create
+- Faster testing with single-distro builds
+- Full multi-distro builds for releases
 
 ### Manual Build Trigger
 
-#### Single Image (Debian)
-1. Navigate to **Actions** tab
-2. Select **Build Radxa CM5 uConsole Image**
+1. Navigate to **Actions** tab: https://github.com/YOUR_USERNAME/uconsole-radaxa-cm5/actions
+2. Select **Build Radxa CM5 uConsole Images**
 3. Click **Run workflow**
 4. Configure parameters:
    - **kernel_version**: Version suffix (default: `1`)
-   - **base_image_url**: Custom base image URL (optional)
-
-#### All Images (Debian + Kali + RetroPie)
-1. Navigate to **Actions** tab
-2. Select **Build All Radxa CM5 uConsole Images**
-3. Click **Run workflow**
-4. Configure parameter:
-   - **kernel_version**: Version suffix (default: `1`)
+   - **build_target**: Select which image(s) to build
+     - `debian` - Debian Bookworm only (recommended for testing)
+     - `kali` - Kali Linux only
+     - `retropie` - RetroPie only
+     - `all` - All three distributions
 
 ### Build Parameters
 
 ```yaml
-kernel_version: "1"          # Increment for each build (1, 2, 3...)
-base_image_url: "https://..." # Custom base image URL (optional)
+kernel_version: "1"    # Increment for each build (1, 2, 3...)
+build_target: "debian" # debian, kali, retropie, or all
 ```
+
+**Tip:** Use single-distro builds during development to save CI/CD minutes. Only build `all` for production releases.
 
 ## Build Process
 

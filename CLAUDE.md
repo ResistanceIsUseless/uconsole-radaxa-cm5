@@ -33,12 +33,17 @@ This script validates:
 
 The repository has **no automated triggers** - all builds are manual via GitHub Actions:
 
-1. **Single image** (`.github/workflows/build-uconsole-image.yml` - currently missing, only multi-distro exists)
-2. **All images** (`.github/workflows/build-all-images.yml`)
+**Build workflow** (`.github/workflows/build-all-images.yml`)
 
 Parameters:
 - `kernel_version`: Version suffix (default: "1") - increment for each build
-- `base_image_url`: Custom base image URL (optional, single-image workflow only)
+- `build_target`: Dropdown selection for which image(s) to build
+  - `debian` (default) - Build Debian only
+  - `kali` - Build Kali only
+  - `retropie` - Build RetroPie only
+  - `all` - Build all three distributions
+
+**Recommended for testing:** Use single-distro builds (debian/kali/retropie) to save CI/CD minutes during development.
 
 ## Architecture
 
@@ -65,22 +70,26 @@ Parameters:
 - Compiles device tree overlays (`.dts` → `.dtbo`)
 - Uploads artifacts (1-day retention)
 
-**Jobs 2-4: build-{debian,kali,retropie}** (run in parallel)
+**Jobs 2-4: build-{debian,kali,retropie}** (run conditionally based on `build_target` input)
+- Only execute if selected in `build_target` parameter
 - Download shared kernel artifacts
 - Download base Radxa image
 - Mount image partitions via loopback device
 - Install kernel packages via chroot
 - Copy overlays to boot partition
 - Distribution-specific configuration:
-  - **Kali**: Add Kali repos, configure GPG key
+  - **Kali**: Add Kali repos, configure GPG key (modern method via gpg --dearmor)
   - **RetroPie**: Create user, clone setup script, add first-boot instructions
+- Cleanup step with `if: always()` to unmount/detach loop devices
 - Compress with xz -9
 - Generate SHA256 checksums
 - Upload artifacts (30-day retention)
 
 **Job 5: create-release-notes**
-- Generates multi-distro installation guide
-- Documents build metadata
+- Always runs (`if: always()`)
+- Generates dynamic release notes based on `build_target`
+- Includes only relevant distro information
+- Documents build metadata and installation instructions
 
 ### Image Mounting Pattern
 
