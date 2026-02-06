@@ -35,8 +35,11 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       kernel_version: ${{ steps.set-version.outputs.version }}
-    
+
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Maximize build space
         run: |
           sudo apt-get remove -y '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' azure-cli google-chrome-stable firefox powershell mono-devel
@@ -60,48 +63,28 @@ jobs:
         with:
           repository: ${{ env.KERNEL_REPO }}
           ref: ${{ env.KERNEL_BRANCH }}
-          path: kernel
+          path: build/kernel
 
       - name: Checkout overlays
         uses: actions/checkout@v4
         with:
           repository: ${{ env.OVERLAYS_REPO }}
-          path: overlays
+          path: build/overlays
 
-      - name: Build kernel
-        working-directory: kernel
+      - name: Build kernel and overlays
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-none-linux-gnu-
-          make rockchip_linux_defconfig
-          make -j$(nproc) Image modules dtbs
+          export KERNEL_VERSION="${{ github.inputs.kernel_version }}"
 
-      - name: Build kernel packages
-        working-directory: kernel
+          # Run the build script
+          ./scripts/build-kernel-ci.sh
+
+      - name: Package artifacts
         run: |
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-none-linux-gnu-
-          export KDEB_PKGVERSION="${{ github.inputs.kernel_version }}"
-          make -j$(nproc) bindeb-pkg
-          mkdir -p ../kernel-packages
-          mv ../*.deb ../kernel-packages/
-
-      - name: Build overlays
-        working-directory: overlays
-        run: |
-          mkdir -p compiled_overlays
-          if [ -d "devicetree_overlays" ]; then
-            # Get kernel include path for dt-bindings
-            KERNEL_INCLUDE="../kernel/include"
-
-            for dts in devicetree_overlays/*.dts; do
-              [ -f "$dts" ] || continue
-              basename=$(basename "$dts" .dts)
-              # Use cpp to preprocess includes, then compile with dtc
-              gcc -E -nostdinc -I"${KERNEL_INCLUDE}" -I"devicetree_overlays" -undef -D__DTS__ -x assembler-with-cpp "$dts" | \
-                dtc -@ -I dts -O dtb -o "compiled_overlays/${basename}.dtbo" -
-            done
-          fi
+          mkdir -p kernel-packages overlays
+          cp build/output/kernel-packages/*.deb kernel-packages/
+          cp build/output/overlays/*.dtbo overlays/
 
       - name: Set kernel version output
         id: set-version

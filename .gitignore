@@ -13,11 +13,11 @@ Thumbs.db
 *.img.gz
 *.deb
 *.dtbo
-kernel/
-overlays/
+build/
 kernel-packages/
 compiled_overlays/
 test_compiled/
+overlays/
 
 # Temporary files
 /tmp/

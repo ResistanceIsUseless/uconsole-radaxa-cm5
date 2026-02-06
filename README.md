@@ -57,6 +57,19 @@ build_target: "debian" # debian, kali, retropie, or all
 
 **Tip:** Use single-distro builds during development to save CI/CD minutes. Only build `all` for production releases.
 
+### Local Builds
+
+You can build images locally without GitHub Actions. See [scripts/README.md](scripts/README.md) for detailed instructions.
+
+Quick start:
+```bash
+# Build kernel
+./scripts/build-kernel.sh 1
+
+# Build image (requires sudo)
+sudo ./scripts/build-image.sh debian 1
+```
+
 ## Build Process
 
 ### Stage 1: Environment Setup
