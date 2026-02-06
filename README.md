@@ -36,10 +36,11 @@ The pipeline pulls from:
 
 ### Manual Build Trigger
 
-1. Navigate to **Actions** tab: https://github.com/YOUR_USERNAME/uconsole-radaxa-cm5/actions
-2. Select **Build Radxa CM5 uConsole Images**
-3. Click **Run workflow**
-4. Configure parameters:
+1. **Fork this repository** to your GitHub account
+2. Navigate to **Actions** tab in your fork: `https://github.com/YOUR_USERNAME/uconsole-radaxa-cm5/actions`
+3. Select **Build Radxa CM5 uConsole Images**
+4. Click **Run workflow**
+5. Configure parameters:
    - **kernel_version**: Version suffix (default: `1`)
    - **build_target**: Select which image(s) to build
      - `debian` - Debian Bookworm only (recommended for testing)
