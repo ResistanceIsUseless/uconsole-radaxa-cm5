@@ -91,10 +91,15 @@ jobs:
         run: |
           mkdir -p compiled_overlays
           if [ -d "devicetree_overlays" ]; then
+            # Get kernel include path for dt-bindings
+            KERNEL_INCLUDE="../kernel/include"
+
             for dts in devicetree_overlays/*.dts; do
               [ -f "$dts" ] || continue
               basename=$(basename "$dts" .dts)
-              dtc -@ -I dts -O dtb -o "compiled_overlays/${basename}.dtbo" "$dts"
+              # Use cpp to preprocess includes, then compile with dtc
+              gcc -E -nostdinc -I"${KERNEL_INCLUDE}" -I"devicetree_overlays" -undef -D__DTS__ -x assembler-with-cpp "$dts" | \
+                dtc -@ -I dts -O dtb -o "compiled_overlays/${basename}.dtbo" -
             done
           fi
 
