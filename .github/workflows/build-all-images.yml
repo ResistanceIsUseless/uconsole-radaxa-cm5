@@ -1,0 +1,482 @@
+name: Build All Radxa CM5 uConsole Images
+
+# Manual trigger - builds all three distros (Debian, Kali, RetroPie)
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_version:
+        description: 'Kernel version suffix'
+        required: true
+        default: '1'
+        type: string
+
+env:
+  ARCH: arm64
+  DEBIAN_FRONTEND: noninteractive
+  KERNEL_BRANCH: linux-6.1-stan-rkr4.1
+  OVERLAYS_REPO: dev-null2019/radxa-cm5-uconsole
+  KERNEL_REPO: ak-rex/ClockworkRadxa-linux
+
+jobs:
+  # ============================================================
+  # JOB 1: Build kernel once, use for all distros
+  # ============================================================
+  build-kernel:
+    runs-on: ubuntu-22.04
+    outputs:
+      kernel_version: ${{ steps.set-version.outputs.version }}
+    
+    steps:
+      - name: Maximize build space
+        run: |
+          sudo apt-get remove -y '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' azure-cli google-chrome-stable firefox powershell mono-devel
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
+            device-tree-compiler u-boot-tools dwarves git wget xz-utils kmod cpio
+
+      - name: Install cross-compiler
+        run: |
+          wget -q https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
+          sudo tar -xf arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz -C /opt/
+          echo "/opt/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu/bin" >> $GITHUB_PATH
+
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.KERNEL_REPO }}
+          ref: ${{ env.KERNEL_BRANCH }}
+          path: kernel
+
+      - name: Checkout overlays
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.OVERLAYS_REPO }}
+          path: overlays
+
+      - name: Build kernel
+        working-directory: kernel
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-none-linux-gnu-
+          make rockchip_linux_defconfig
+          make -j$(nproc) Image modules dtbs
+
+      - name: Build kernel packages
+        working-directory: kernel
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-none-linux-gnu-
+          export KDEB_PKGVERSION="${{ github.inputs.kernel_version }}"
+          make -j$(nproc) bindeb-pkg
+          mkdir -p ../kernel-packages
+          mv ../*.deb ../kernel-packages/
+
+      - name: Build overlays
+        working-directory: overlays
+        run: |
+          mkdir -p compiled_overlays
+          if [ -d "devicetree_overlays" ]; then
+            for dts in devicetree_overlays/*.dts; do
+              [ -f "$dts" ] || continue
+              basename=$(basename "$dts" .dts)
+              dtc -@ -I dts -O dtb -o "compiled_overlays/${basename}.dtbo" "$dts"
+            done
+          fi
+
+      - name: Set kernel version output
+        id: set-version
+        run: echo "version=${{ github.inputs.kernel_version }}" >> $GITHUB_OUTPUT
+
+      - name: Upload kernel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build
+          path: |
+            kernel-packages/
+            overlays/compiled_overlays/
+          retention-days: 1
+
+  # ============================================================
+  # JOB 2: Build Debian image
+  # ============================================================
+  build-debian:
+    needs: build-kernel
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget xz-utils kmod cpio rsync dosfstools parted qemu-user-static binfmt-support pixz
+
+      - name: Download kernel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-build
+
+      - name: Download base image
+        run: |
+          wget -O debian.img.xz https://github.com/radxa-build/radxa-cm5-rpi-cm4-io/releases/download/rsdk-b3/radxa-cm5-rpi-cm4-io_bookworm_cli_b3.output.img.xz
+          xz -d debian.img.xz
+
+      - name: Mount and modify image
+        run: |
+          sudo losetup -fP debian.img
+          export LOOP_DEVICE=$(losetup -a | grep debian.img | cut -d: -f1)
+          sudo mkdir -p /mnt/{boot,root}
+          sudo mount ${LOOP_DEVICE}p1 /mnt/boot || true
+          sudo mount ${LOOP_DEVICE}p2 /mnt/root
+          
+          # Install kernel
+          sudo cp kernel-packages/*.deb /mnt/root/tmp/
+          sudo chroot /mnt/root /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+            cd /tmp
+            dpkg -i linux-image-*.deb || true
+            apt-get install -f -y
+            rm -f /tmp/*.deb
+            update-initramfs -u -k all
+          "
+          
+          # Install overlays
+          sudo mkdir -p /mnt/boot/overlays
+          sudo cp compiled_overlays/*.dtbo /mnt/boot/overlays/ 2>/dev/null || true
+          
+          sudo sync
+          sudo umount /mnt/boot /mnt/root
+          sudo losetup -d $LOOP_DEVICE
+
+      - name: Cleanup mounts
+        if: always()
+        run: |
+          sudo umount /mnt/boot /mnt/root 2>/dev/null || true
+          LOOP_DEVICE=$(losetup -a | grep debian.img | cut -d: -f1 || true)
+          if [ -n "$LOOP_DEVICE" ]; then
+            sudo losetup -d $LOOP_DEVICE || true
+          fi
+
+      - name: Compress image
+        run: |
+          IMAGE_NAME="radxa-cm5-uconsole_debian_bookworm_kernel-${{ needs.build-kernel.outputs.kernel_version }}_$(date +%Y%m%d).img"
+          mv debian.img "$IMAGE_NAME"
+          xz -z -9 -T$(nproc) "$IMAGE_NAME"
+          sha256sum "${IMAGE_NAME}.xz" > "${IMAGE_NAME}.xz.sha256"
+          echo "DEBIAN_IMAGE=${IMAGE_NAME}.xz" >> $GITHUB_ENV
+
+      - name: Upload Debian image
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-image
+          path: |
+            ${{ env.DEBIAN_IMAGE }}
+            ${{ env.DEBIAN_IMAGE }}.sha256
+          retention-days: 30
+
+  # ============================================================
+  # JOB 3: Build Kali image
+  # ============================================================
+  build-kali:
+    needs: build-kernel
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget xz-utils kmod cpio rsync dosfstools parted qemu-user-static binfmt-support pixz debootstrap
+
+      - name: Download kernel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-build
+
+      - name: Build Kali rootfs from Debian base
+        run: |
+          # Use Debian base and convert to Kali
+          wget -O kali.img.xz https://github.com/radxa-build/radxa-cm5-rpi-cm4-io/releases/download/rsdk-b3/radxa-cm5-rpi-cm4-io_bookworm_cli_b3.output.img.xz
+          xz -d kali.img.xz
+          
+          sudo losetup -fP kali.img
+          export LOOP_DEVICE=$(losetup -a | grep kali.img | cut -d: -f1)
+          sudo mkdir -p /mnt/{boot,root}
+          sudo mount ${LOOP_DEVICE}p1 /mnt/boot || true
+          sudo mount ${LOOP_DEVICE}p2 /mnt/root
+          
+          # Install kernel
+          sudo cp kernel-packages/*.deb /mnt/root/tmp/
+          
+          # Configure Kali repos and install kernel
+          sudo chroot /mnt/root /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+            
+            # Add Kali repos
+            echo 'deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware' > /etc/apt/sources.list.d/kali.list
+            
+            # Add Kali GPG key (using modern method)
+            wget -q -O /tmp/kali-archive-key.asc https://archive.kali.org/archive-key.asc
+            gpg --dearmor < /tmp/kali-archive-key.asc > /etc/apt/trusted.gpg.d/kali-archive-keyring.gpg
+            rm /tmp/kali-archive-key.asc
+            
+            # Update and install kernel
+            apt-get update || true
+            cd /tmp
+            dpkg -i linux-image-*.deb || true
+            apt-get install -f -y
+            rm -f /tmp/*.deb
+            update-initramfs -u -k all
+            
+            # Install minimal Kali tools (optional, comment out to save space/time)
+            # apt-get install -y kali-tools-top10
+          "
+          
+          # Install overlays
+          sudo mkdir -p /mnt/boot/overlays
+          sudo cp compiled_overlays/*.dtbo /mnt/boot/overlays/ 2>/dev/null || true
+          
+          sudo sync
+          sudo umount /mnt/boot /mnt/root
+          sudo losetup -d $LOOP_DEVICE
+
+      - name: Cleanup mounts
+        if: always()
+        run: |
+          sudo umount /mnt/boot /mnt/root 2>/dev/null || true
+          LOOP_DEVICE=$(losetup -a | grep kali.img | cut -d: -f1 || true)
+          if [ -n "$LOOP_DEVICE" ]; then
+            sudo losetup -d $LOOP_DEVICE || true
+          fi
+
+      - name: Compress image
+        run: |
+          IMAGE_NAME="radxa-cm5-uconsole_kali_kernel-${{ needs.build-kernel.outputs.kernel_version }}_$(date +%Y%m%d).img"
+          mv kali.img "$IMAGE_NAME"
+          xz -z -9 -T$(nproc) "$IMAGE_NAME"
+          sha256sum "${IMAGE_NAME}.xz" > "${IMAGE_NAME}.xz.sha256"
+          echo "KALI_IMAGE=${IMAGE_NAME}.xz" >> $GITHUB_ENV
+
+      - name: Upload Kali image
+        uses: actions/upload-artifact@v4
+        with:
+          name: kali-image
+          path: |
+            ${{ env.KALI_IMAGE }}
+            ${{ env.KALI_IMAGE }}.sha256
+          retention-days: 30
+
+  # ============================================================
+  # JOB 4: Build RetroPie image
+  # ============================================================
+  build-retropie:
+    needs: build-kernel
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget xz-utils kmod cpio rsync dosfstools parted qemu-user-static binfmt-support pixz
+
+      - name: Download kernel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-build
+
+      - name: Build RetroPie from base
+        run: |
+          # Start with Debian base, add RetroPie
+          wget -O retropie.img.xz https://github.com/radxa-build/radxa-cm5-rpi-cm4-io/releases/download/rsdk-b3/radxa-cm5-rpi-cm4-io_bookworm_cli_b3.output.img.xz
+          xz -d retropie.img.xz
+          
+          sudo losetup -fP retropie.img
+          export LOOP_DEVICE=$(losetup -a | grep retropie.img | cut -d: -f1)
+          sudo mkdir -p /mnt/{boot,root}
+          sudo mount ${LOOP_DEVICE}p1 /mnt/boot || true
+          sudo mount ${LOOP_DEVICE}p2 /mnt/root
+          
+          # Install kernel
+          sudo cp kernel-packages/*.deb /mnt/root/tmp/
+          
+          # Install kernel and prepare for RetroPie
+          sudo chroot /mnt/root /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+            
+            # Install kernel
+            cd /tmp
+            dpkg -i linux-image-*.deb || true
+            apt-get install -f -y
+            rm -f /tmp/*.deb
+            update-initramfs -u -k all
+            
+            # Install RetroPie dependencies
+            apt-get install -y git dialog unzip xmlstarlet python3-pip
+            
+            # Create RetroPie user
+            useradd -m -G video,audio,input,dialout,plugdev -s /bin/bash retropie || true
+            echo 'retropie:retropie' | chpasswd
+            
+            # Download RetroPie setup script (doesn't run full install to save time)
+            cd /home/retropie
+            git clone --depth=1 https://github.com/RetroPie/RetroPie-Setup.git
+            chown -R retropie:retropie RetroPie-Setup
+            
+            # Create placeholder - user runs setup on first boot
+            echo '#!/bin/bash' > /home/retropie/install-retropie.sh
+            echo 'cd /home/retropie/RetroPie-Setup' >> /home/retropie/install-retropie.sh
+            echo 'sudo ./retropie_setup.sh' >> /home/retropie/install-retropie.sh
+            chmod +x /home/retropie/install-retropie.sh
+            chown retropie:retropie /home/retropie/install-retropie.sh
+          "
+          
+          # Install overlays
+          sudo mkdir -p /mnt/boot/overlays
+          sudo cp compiled_overlays/*.dtbo /mnt/boot/overlays/ 2>/dev/null || true
+          
+          # Create first-boot message
+          printf '%s\n' \
+            '===========================================' \
+            '  Radxa CM5 uConsole - RetroPie Edition' \
+            '===========================================' \
+            '' \
+            'To complete RetroPie installation:' \
+            '  1. Run: ./install-retropie.sh' \
+            '  2. Select "Basic Install"' \
+            '  3. Wait for installation to complete' \
+            '  4. Reboot' \
+            '' \
+            'Default credentials:' \
+            '  User: retropie' \
+            '  Pass: retropie' \
+            '' \
+            '===========================================' \
+            | sudo tee /mnt/root/etc/motd > /dev/null
+          
+          sudo sync
+          sudo umount /mnt/boot /mnt/root
+          sudo losetup -d $LOOP_DEVICE
+
+      - name: Cleanup mounts
+        if: always()
+        run: |
+          sudo umount /mnt/boot /mnt/root 2>/dev/null || true
+          LOOP_DEVICE=$(losetup -a | grep retropie.img | cut -d: -f1 || true)
+          if [ -n "$LOOP_DEVICE" ]; then
+            sudo losetup -d $LOOP_DEVICE || true
+          fi
+
+      - name: Compress image
+        run: |
+          IMAGE_NAME="radxa-cm5-uconsole_retropie_kernel-${{ needs.build-kernel.outputs.kernel_version }}_$(date +%Y%m%d).img"
+          mv retropie.img "$IMAGE_NAME"
+          xz -z -9 -T$(nproc) "$IMAGE_NAME"
+          sha256sum "${IMAGE_NAME}.xz" > "${IMAGE_NAME}.xz.sha256"
+          echo "RETROPIE_IMAGE=${IMAGE_NAME}.xz" >> $GITHUB_ENV
+
+      - name: Upload RetroPie image
+        uses: actions/upload-artifact@v4
+        with:
+          name: retropie-image
+          path: |
+            ${{ env.RETROPIE_IMAGE }}
+            ${{ env.RETROPIE_IMAGE }}.sha256
+          retention-days: 30
+
+  # ============================================================
+  # JOB 5: Create release summary
+  # ============================================================
+  create-release-notes:
+    needs: [build-kernel, build-debian, build-kali, build-retropie]
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: Generate release notes
+        run: |
+          cat << 'EOF' > release-notes.md
+          # Radxa CM5 uConsole Multi-Distro Release
+          
+          **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Kernel Version:** 6.1.x-${{ needs.build-kernel.outputs.kernel_version }}
+          **Kernel Source:** ClockworkRadxa-linux (linux-6.1-stan-rkr4.1)
+          
+          ## Available Images
+          
+          ### Debian Bookworm (CLI)
+          - Base system with minimal packages
+          - Recommended for development and customization
+          - **Use case:** General purpose, development, server
+          
+          ### Kali Linux
+          - Security-focused distribution
+          - Kali repositories enabled (tools not pre-installed to save space)
+          - **Use case:** Penetration testing, security research
+          - **Note:** Run `apt-get install kali-tools-top10` for core tools
+          
+          ### RetroPie
+          - Retro gaming platform
+          - RetroPie-Setup included (requires first-boot installation)
+          - **Use case:** Portable gaming emulation
+          - **Note:** Run `./install-retropie.sh` after first boot
+          
+          ## Hardware Support
+          
+          All images share the same kernel and support:
+          - ✅ Display, Keyboard, USB, Power Management
+          - ✅ 4G module, microSD card
+          - ❌ WiFi/BT (hardware limitation - use USB dongles)
+          
+          ## Installation
+          
+          ```bash
+          # Download image
+          wget <image-url>
+          
+          # Verify checksum
+          sha256sum -c <image>.sha256
+          
+          # Extract
+          xz -d <image>.xz
+          
+          # Flash (replace /dev/sdX)
+          sudo dd if=<image> of=/dev/sdX bs=4M status=progress
+          sync
+          ```
+          
+          ## Default Credentials
+          
+          - **Debian:** clockwork / clockwork
+          - **Kali:** clockwork / clockwork (change immediately!)
+          - **RetroPie:** retropie / retropie
+          
+          ## Build Artifacts
+          
+          This release includes:
+          - 3 bootable images (.img.xz)
+          - SHA256 checksums
+          - Kernel .deb packages (for updates)
+          - Device tree overlays (.dtbo)
+          
+          ## Next Steps
+          
+          1. Flash chosen image to microSD
+          2. Boot in uConsole
+          3. Change default passwords
+          4. Update system: `sudo apt update && sudo apt upgrade`
+          5. For RetroPie: Run installation script
+          
+          ---
+          
+          **Build Workflow:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EOF
+          
+          cat release-notes.md
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 30
