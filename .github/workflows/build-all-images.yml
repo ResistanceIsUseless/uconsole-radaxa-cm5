@@ -129,17 +129,17 @@ jobs:
           export LOOP_DEVICE=$(losetup -a | grep debian.img | cut -d: -f1)
           echo "Loop device: $LOOP_DEVICE"
 
-          sudo mkdir -p /mnt/{boot,root}
-          sudo mount ${LOOP_DEVICE}p1 /mnt/boot || true
-          sudo mount ${LOOP_DEVICE}p2 /mnt/root
+          mkdir -p ./mnt/{boot,root}
+          sudo mount ${LOOP_DEVICE}p1 ./mnt/boot || true
+          sudo mount ${LOOP_DEVICE}p2 ./mnt/root
 
           # Verify mount and create tmp directory
-          ls -la /mnt/root/ || true
-          sudo mkdir -p /mnt/root/tmp
+          ls -la ./mnt/root/ || true
+          sudo mkdir -p ./mnt/root/tmp
 
           # Install kernel
-          sudo cp kernel-packages/*.deb /mnt/root/tmp/
-          sudo chroot /mnt/root /bin/bash -c "
+          sudo cp kernel-packages/*.deb ./mnt/root/tmp/
+          sudo chroot ./mnt/root /bin/bash -c "
             export DEBIAN_FRONTEND=noninteractive
             cd /tmp
             dpkg -i linux-image-*.deb || true
@@ -147,23 +147,24 @@ jobs:
             rm -f /tmp/*.deb
             update-initramfs -u -k all
           "
-          
+
           # Install overlays
-          sudo mkdir -p /mnt/boot/overlays
-          sudo cp compiled_overlays/*.dtbo /mnt/boot/overlays/ 2>/dev/null || true
-          
+          sudo mkdir -p ./mnt/boot/overlays
+          sudo cp compiled_overlays/*.dtbo ./mnt/boot/overlays/ 2>/dev/null || true
+
           sudo sync
-          sudo umount /mnt/boot /mnt/root
+          sudo umount ./mnt/boot ./mnt/root
           sudo losetup -d $LOOP_DEVICE
 
       - name: Cleanup mounts
         if: always()
         run: |
-          sudo umount /mnt/boot /mnt/root 2>/dev/null || true
+          sudo umount ./mnt/boot ./mnt/root 2>/dev/null || true
           LOOP_DEVICE=$(losetup -a | grep debian.img | cut -d: -f1 || true)
           if [ -n "$LOOP_DEVICE" ]; then
             sudo losetup -d $LOOP_DEVICE || true
           fi
+          rm -rf ./mnt
 
       - name: Compress image
         run: |
@@ -211,18 +212,18 @@ jobs:
           export LOOP_DEVICE=$(losetup -a | grep kali.img | cut -d: -f1)
           echo "Loop device: $LOOP_DEVICE"
 
-          sudo mkdir -p /mnt/{boot,root}
-          sudo mount ${LOOP_DEVICE}p1 /mnt/boot || true
-          sudo mount ${LOOP_DEVICE}p2 /mnt/root
+          mkdir -p ./mnt/{boot,root}
+          sudo mount ${LOOP_DEVICE}p1 ./mnt/boot || true
+          sudo mount ${LOOP_DEVICE}p2 ./mnt/root
 
           # Verify mount and create tmp directory
-          sudo mkdir -p /mnt/root/tmp
+          sudo mkdir -p ./mnt/root/tmp
 
           # Install kernel
-          sudo cp kernel-packages/*.deb /mnt/root/tmp/
+          sudo cp kernel-packages/*.deb ./mnt/root/tmp/
           
           # Configure Kali repos and install kernel
-          sudo chroot /mnt/root /bin/bash -c "
+          sudo chroot ./mnt/root /bin/bash -c "
             export DEBIAN_FRONTEND=noninteractive
             
             # Add Kali repos
@@ -246,21 +247,22 @@ jobs:
           "
           
           # Install overlays
-          sudo mkdir -p /mnt/boot/overlays
-          sudo cp compiled_overlays/*.dtbo /mnt/boot/overlays/ 2>/dev/null || true
-          
+          sudo mkdir -p ./mnt/boot/overlays
+          sudo cp compiled_overlays/*.dtbo ./mnt/boot/overlays/ 2>/dev/null || true
+
           sudo sync
-          sudo umount /mnt/boot /mnt/root
+          sudo umount ./mnt/boot ./mnt/root
           sudo losetup -d $LOOP_DEVICE
 
       - name: Cleanup mounts
         if: always()
         run: |
-          sudo umount /mnt/boot /mnt/root 2>/dev/null || true
+          sudo umount ./mnt/boot ./mnt/root 2>/dev/null || true
           LOOP_DEVICE=$(losetup -a | grep kali.img | cut -d: -f1 || true)
           if [ -n "$LOOP_DEVICE" ]; then
             sudo losetup -d $LOOP_DEVICE || true
           fi
+          rm -rf ./mnt
 
       - name: Compress image
         run: |
@@ -308,18 +310,18 @@ jobs:
           export LOOP_DEVICE=$(losetup -a | grep retropie.img | cut -d: -f1)
           echo "Loop device: $LOOP_DEVICE"
 
-          sudo mkdir -p /mnt/{boot,root}
-          sudo mount ${LOOP_DEVICE}p1 /mnt/boot || true
-          sudo mount ${LOOP_DEVICE}p2 /mnt/root
+          mkdir -p ./mnt/{boot,root}
+          sudo mount ${LOOP_DEVICE}p1 ./mnt/boot || true
+          sudo mount ${LOOP_DEVICE}p2 ./mnt/root
 
           # Verify mount and create tmp directory
-          sudo mkdir -p /mnt/root/tmp
+          sudo mkdir -p ./mnt/root/tmp
 
           # Install kernel
-          sudo cp kernel-packages/*.deb /mnt/root/tmp/
-          
+          sudo cp kernel-packages/*.deb ./mnt/root/tmp/
+
           # Install kernel and prepare for RetroPie
-          sudo chroot /mnt/root /bin/bash -c "
+          sudo chroot ./mnt/root /bin/bash -c "
             export DEBIAN_FRONTEND=noninteractive
             
             # Install kernel
@@ -350,9 +352,9 @@ jobs:
           "
           
           # Install overlays
-          sudo mkdir -p /mnt/boot/overlays
-          sudo cp compiled_overlays/*.dtbo /mnt/boot/overlays/ 2>/dev/null || true
-          
+          sudo mkdir -p ./mnt/boot/overlays
+          sudo cp compiled_overlays/*.dtbo ./mnt/boot/overlays/ 2>/dev/null || true
+
           # Create first-boot message
           printf '%s\n' \
             '===========================================' \
@@ -370,20 +372,21 @@ jobs:
             '  Pass: retropie' \
             '' \
             '===========================================' \
-            | sudo tee /mnt/root/etc/motd > /dev/null
-          
+            | sudo tee ./mnt/root/etc/motd > /dev/null
+
           sudo sync
-          sudo umount /mnt/boot /mnt/root
+          sudo umount ./mnt/boot ./mnt/root
           sudo losetup -d $LOOP_DEVICE
 
       - name: Cleanup mounts
         if: always()
         run: |
-          sudo umount /mnt/boot /mnt/root 2>/dev/null || true
+          sudo umount ./mnt/boot ./mnt/root 2>/dev/null || true
           LOOP_DEVICE=$(losetup -a | grep retropie.img | cut -d: -f1 || true)
           if [ -n "$LOOP_DEVICE" ]; then
             sudo losetup -d $LOOP_DEVICE || true
           fi
+          rm -rf ./mnt
 
       - name: Compress image
         run: |
