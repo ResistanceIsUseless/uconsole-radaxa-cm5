@@ -151,7 +151,7 @@ sudo apt-get install kali-linux-everything
 ### Limitations
 - ❌ No WiFi/BT (use USB dongles)
 - ⚠️ Audio: mono only
-- ⚠️ HDMI: requires hardware mod
+- ⚠️ HDMI: requires adapter board (uConsole Upgrade Kit)
 
 ### Credentials
 - **Debian:** `clockwork` / `clockwork`

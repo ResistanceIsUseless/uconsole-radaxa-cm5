@@ -196,12 +196,15 @@ sudo reboot
 ### Known Limitations
 - ❌ **WiFi/Bluetooth**: Not available (hardware limitation - CM5 has no wireless)
 - ⚠️ **Audio**: Mono only, experimental
-- ⚠️ **HDMI**: Requires hardware modifications
+- ⚠️ **HDMI**: Not available on standard uConsole carrier board
+  - **Solution**: Use [uConsole Upgrade Kit adapter board](https://hackergadgets.com/products/pre-order-adapter-board-for-uconsole-ugrade-kit) for HDMI output
+  - Adapter provides HDMI without modifying the uConsole
 
 ### Workarounds
 - **WiFi**: Use USB WiFi dongle
 - **Bluetooth**: Use USB Bluetooth adapter
 - **Audio**: USB audio device recommended
+- **HDMI**: Use uConsole upgrade adapter board (no hardware mod required)
 
 ## Customization
 

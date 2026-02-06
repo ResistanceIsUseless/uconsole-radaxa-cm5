@@ -127,9 +127,9 @@ Cross-compiler path: `/opt/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux
 **Limitations:**
 - WiFi/Bluetooth: Not available (CM5 hardware limitation)
 - Audio: Mono only, experimental
-- HDMI: Requires hardware modifications
+- HDMI: Not available on standard carrier board (requires uConsole upgrade adapter board)
 
-**Workarounds:** USB WiFi/BT dongles, USB audio devices
+**Workarounds:** USB WiFi/BT dongles, USB audio devices, uConsole upgrade adapter for HDMI
 
 ## Modifying Builds
 
