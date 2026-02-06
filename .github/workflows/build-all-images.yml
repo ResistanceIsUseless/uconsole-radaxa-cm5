@@ -1,14 +1,24 @@
-name: Build All Radxa CM5 uConsole Images
+name: Build Radxa CM5 uConsole Images
 
-# Manual trigger - builds all three distros (Debian, Kali, RetroPie)
+# Manual trigger - build kernel and selected image(s)
 on:
   workflow_dispatch:
     inputs:
       kernel_version:
-        description: 'Kernel version suffix'
+        description: 'Kernel version suffix (e.g., 1, 2, 3...)'
         required: true
         default: '1'
         type: string
+      build_target:
+        description: 'Image to build'
+        required: true
+        type: choice
+        options:
+          - all
+          - debian
+          - kali
+          - retropie
+        default: 'debian'
 
 env:
   ARCH: arm64
@@ -106,6 +116,7 @@ jobs:
   # ============================================================
   build-debian:
     needs: build-kernel
+    if: ${{ github.event.inputs.build_target == 'debian' || github.event.inputs.build_target == 'all' }}
     runs-on: ubuntu-22.04
     
     steps:
@@ -182,6 +193,7 @@ jobs:
   # ============================================================
   build-kali:
     needs: build-kernel
+    if: ${{ github.event.inputs.build_target == 'kali' || github.event.inputs.build_target == 'all' }}
     runs-on: ubuntu-22.04
     
     steps:
@@ -273,6 +285,7 @@ jobs:
   # ============================================================
   build-retropie:
     needs: build-kernel
+    if: ${{ github.event.inputs.build_target == 'retropie' || github.event.inputs.build_target == 'all' }}
     runs-on: ubuntu-22.04
     
     steps:
@@ -389,37 +402,66 @@ jobs:
   # JOB 5: Create release summary
   # ============================================================
   create-release-notes:
-    needs: [build-kernel, build-debian, build-kali, build-retropie]
+    needs: [build-kernel]
+    if: always()
     runs-on: ubuntu-22.04
     
     steps:
       - name: Generate release notes
         run: |
-          cat << 'EOF' > release-notes.md
-          # Radxa CM5 uConsole Multi-Distro Release
-          
+          BUILD_TARGET="${{ github.event.inputs.build_target }}"
+
+          cat << EOF > release-notes.md
+          # Radxa CM5 uConsole Build
+
           **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           **Kernel Version:** 6.1.x-${{ needs.build-kernel.outputs.kernel_version }}
           **Kernel Source:** ClockworkRadxa-linux (linux-6.1-stan-rkr4.1)
-          
-          ## Available Images
-          
+          **Build Target:** ${BUILD_TARGET}
+
+          ## Build Information
+
+          This build includes the custom kernel and the following image(s):
+
+          EOF
+
+          # Add distro-specific info based on what was built
+          if [ "$BUILD_TARGET" = "debian" ] || [ "$BUILD_TARGET" = "all" ]; then
+            cat << 'EOF' >> release-notes.md
           ### Debian Bookworm (CLI)
           - Base system with minimal packages
           - Recommended for development and customization
           - **Use case:** General purpose, development, server
-          
+          - **Default credentials:** clockwork / clockwork
+
+          EOF
+          fi
+
+          if [ "$BUILD_TARGET" = "kali" ] || [ "$BUILD_TARGET" = "all" ]; then
+            cat << 'EOF' >> release-notes.md
           ### Kali Linux
           - Security-focused distribution
           - Kali repositories enabled (tools not pre-installed to save space)
           - **Use case:** Penetration testing, security research
-          - **Note:** Run `apt-get install kali-tools-top10` for core tools
-          
+          - **Note:** Run \`apt-get install kali-tools-top10\` for core tools
+          - **Default credentials:** clockwork / clockwork (CHANGE IMMEDIATELY!)
+
+          EOF
+          fi
+
+          if [ "$BUILD_TARGET" = "retropie" ] || [ "$BUILD_TARGET" = "all" ]; then
+            cat << 'EOF' >> release-notes.md
           ### RetroPie
           - Retro gaming platform
           - RetroPie-Setup included (requires first-boot installation)
           - **Use case:** Portable gaming emulation
-          - **Note:** Run `./install-retropie.sh` after first boot
+          - **Note:** Run \`./install-retropie.sh\` after first boot
+          - **Default credentials:** retropie / retropie
+
+          EOF
+          fi
+
+          cat << 'EOF' >> release-notes.md
           
           ## Hardware Support
           
@@ -429,46 +471,41 @@ jobs:
           - ❌ WiFi/BT (hardware limitation - use USB dongles)
           
           ## Installation
-          
-          ```bash
+
+          \`\`\`bash
           # Download image
           wget <image-url>
-          
+
           # Verify checksum
           sha256sum -c <image>.sha256
-          
+
           # Extract
           xz -d <image>.xz
-          
+
           # Flash (replace /dev/sdX)
           sudo dd if=<image> of=/dev/sdX bs=4M status=progress
           sync
-          ```
-          
-          ## Default Credentials
-          
-          - **Debian:** clockwork / clockwork
-          - **Kali:** clockwork / clockwork (change immediately!)
-          - **RetroPie:** retropie / retropie
-          
+          \`\`\`
+
           ## Build Artifacts
-          
-          This release includes:
-          - 3 bootable images (.img.xz)
-          - SHA256 checksums
-          - Kernel .deb packages (for updates)
+
+          This build includes:
+          - Kernel .deb packages (linux-image, linux-headers)
           - Device tree overlays (.dtbo)
-          
+          - Flashable image(s) (.img.xz) with SHA256 checksums
+
           ## Next Steps
-          
-          1. Flash chosen image to microSD
-          2. Boot in uConsole
-          3. Change default passwords
-          4. Update system: `sudo apt update && sudo apt upgrade`
-          5. For RetroPie: Run installation script
-          
+
+          1. Download image and checksum from artifacts
+          2. Verify checksum matches
+          3. Flash to microSD card (8GB+ recommended)
+          4. Boot in uConsole
+          5. Change default password immediately
+          6. Update system: \`sudo apt update && sudo apt upgrade\`
+          7. For RetroPie: Run \`./install-retropie.sh\` as retropie user
+
           ---
-          
+
           **Build Workflow:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EOF
           
