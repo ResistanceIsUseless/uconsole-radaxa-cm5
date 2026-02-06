@@ -127,10 +127,16 @@ jobs:
         run: |
           sudo losetup -fP debian.img
           export LOOP_DEVICE=$(losetup -a | grep debian.img | cut -d: -f1)
+          echo "Loop device: $LOOP_DEVICE"
+
           sudo mkdir -p /mnt/{boot,root}
           sudo mount ${LOOP_DEVICE}p1 /mnt/boot || true
           sudo mount ${LOOP_DEVICE}p2 /mnt/root
-          
+
+          # Verify mount and create tmp directory
+          ls -la /mnt/root/ || true
+          sudo mkdir -p /mnt/root/tmp
+
           # Install kernel
           sudo cp kernel-packages/*.deb /mnt/root/tmp/
           sudo chroot /mnt/root /bin/bash -c "
@@ -203,10 +209,15 @@ jobs:
           
           sudo losetup -fP kali.img
           export LOOP_DEVICE=$(losetup -a | grep kali.img | cut -d: -f1)
+          echo "Loop device: $LOOP_DEVICE"
+
           sudo mkdir -p /mnt/{boot,root}
           sudo mount ${LOOP_DEVICE}p1 /mnt/boot || true
           sudo mount ${LOOP_DEVICE}p2 /mnt/root
-          
+
+          # Verify mount and create tmp directory
+          sudo mkdir -p /mnt/root/tmp
+
           # Install kernel
           sudo cp kernel-packages/*.deb /mnt/root/tmp/
           
@@ -295,10 +306,15 @@ jobs:
           
           sudo losetup -fP retropie.img
           export LOOP_DEVICE=$(losetup -a | grep retropie.img | cut -d: -f1)
+          echo "Loop device: $LOOP_DEVICE"
+
           sudo mkdir -p /mnt/{boot,root}
           sudo mount ${LOOP_DEVICE}p1 /mnt/boot || true
           sudo mount ${LOOP_DEVICE}p2 /mnt/root
-          
+
+          # Verify mount and create tmp directory
+          sudo mkdir -p /mnt/root/tmp
+
           # Install kernel
           sudo cp kernel-packages/*.deb /mnt/root/tmp/
           

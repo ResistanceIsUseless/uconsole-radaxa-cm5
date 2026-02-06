@@ -107,6 +107,11 @@ mkdir -p "${MOUNT_DIR}/boot" "${MOUNT_DIR}/root"
 mount "${LOOP_DEVICE}p1" "${MOUNT_DIR}/boot" || true
 mount "${LOOP_DEVICE}p2" "${MOUNT_DIR}/root"
 
+# Verify mount and create tmp directory
+log_info "Verifying mount..."
+ls -la "${MOUNT_DIR}/root/" > /dev/null || log_error "Root filesystem not mounted properly"
+mkdir -p "${MOUNT_DIR}/root/tmp"
+
 # Install kernel
 log_info "Installing kernel packages..."
 cp "${OUTPUT_DIR}"/kernel-packages/*.deb "${MOUNT_DIR}/root/tmp/"
